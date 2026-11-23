@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#11161d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>소화기 압력 실시간 모니터</title>
+<style>
+  :root{
+    --bg:#0e1319; --panel:#161d26; --panel2:#1d2631; --line:#2a3544; --text:#e8eef5; --muted:#8fa0b3;
+    --ok:#2fbf71; --warn:#f2a531; --bad:#ef4b4b; --info:#4aa3ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;font-size:15px}
+  button,input,select{font:inherit}
+  header{position:sticky;top:0;z-index:20;background:rgba(14,19,25,.95);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;flex:1;min-width:180px}
+  .pill{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .pill.on{color:var(--ok);border-color:var(--ok)} .pill.off{color:var(--bad);border-color:var(--bad)} .pill.wait{color:var(--warn);border-color:var(--warn)}
+  .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer}
+  .btn:hover{border-color:var(--info)} .btn.primary{background:var(--info);border-color:var(--info);color:#fff}
+  .btn.danger{background:var(--bad);border-color:var(--bad);color:#fff} .btn.small{padding:5px 9px;font-size:13px}
+  main{padding:14px;max-width:1200px;margin:0 auto}
+  #alarm{display:none;margin:0 0 14px;border-radius:14px;padding:14px 16px;background:var(--bad);color:#fff;animation:blink 1s infinite;align-items:center;gap:12px;flex-wrap:wrap}
+  #alarm.show{display:flex} #alarm b{font-size:18px} #alarm .txt{flex:1;min-width:200px}
+  #alarm.warnonly{background:var(--warn);color:#111;animation:none}
+  @keyframes blink{50%{filter:brightness(1.25)}}
+  #hint{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:12px 14px;color:var(--muted);margin-bottom:14px;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;position:relative}
+  .card.st-LOW,.card.st-HIGH{border-color:var(--bad);box-shadow:0 0 0 2px rgba(239,75,75,.35)}
+  .card.st-FAULT,.card.offline{border-color:var(--warn)}
+  .card h2{font-size:16px;margin:0 0 2px} .card .sub{color:var(--muted);font-size:12px}
+  .badge{position:absolute;top:14px;right:14px;font-weight:700;font-size:13px;padding:5px 10px;border-radius:8px;background:var(--panel2)}
+  .b-NORMAL{background:rgba(47,191,113,.15);color:var(--ok)} .b-LOW,.b-HIGH{background:var(--bad);color:#fff}
+  .b-FAULT,.b-OFFLINE{background:var(--warn);color:#111} .b-UNCAL,.b-INIT{background:var(--panel2);color:var(--muted)}
+  .gaugewrap{display:flex;justify-content:center;margin:6px 0 0}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:13px;color:var(--muted);margin-top:6px}
+  .meta span b{color:var(--text);font-weight:600}
+  canvas.trend{width:100%;height:70px;display:block;margin-top:8px;background:var(--panel2);border-radius:8px}
+  .actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  section.log{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+  section.log h3{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+  #log{list-style:none;margin:0;padding:0;max-height:340px;overflow:auto;font-size:13px}
+  #log li{padding:7px 2px;border-bottom:1px solid var(--line);display:flex;gap:10px}
+  #log time{color:var(--muted);white-space:nowrap} #log .t{font-weight:700;white-space:nowrap}
+  .t-LOW,.t-HIGH,.t-RAPID_DROP{color:var(--bad)} .t-FAULT,.t-MISMATCH,.t-OFFLINE,.t-REMIND{color:var(--warn)} .t-NORMAL,.t-ONLINE{color:var(--ok)} .t-TEST,.t-ACK,.t-UNCAL{color:var(--info)}
+  dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:0;width:min(560px,94vw)}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  dialog .hd{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  dialog .bd{padding:14px 16px;display:grid;gap:12px}
+  label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+  input[type=text],input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;width:100%}
+  .row{display:flex;gap:8px;align-items:end;flex-wrap:wrap} .row > *{flex:1}
+  .live{font-size:22px;font-weight:700} .live small{font-size:13px;color:var(--muted);font-weight:400}
+  pre.resp{background:#0a0e13;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:180px;overflow:auto;white-space:pre-wrap;font-size:12.5px;margin:0}
+  .step{font-size:13px;color:var(--muted);line-height:1.5}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>소화기 압력 실시간 모니터</h1>
+  <span id="conn" class="pill wait">연결 중</span>
+  <button id="btnEnable" class="btn primary small">소리·알림 켜기</button>
+  <button id="btnSettings" class="btn small">설정</button>
+</header>
+
+<main>
+  <div id="alarm"><div class="txt"><b id="alarmTitle">경보</b><div id="alarmText"></div></div>
+    <button id="btnAck" class="btn small" style="background:#fff;color:#000">경보 확인(소리 끄기)</button></div>
+  <div id="hint">장치를 기다리는 중입니다. 장치가 켜져 있는데도 계속 이 문구가 보이면, 오른쪽 위 <b>설정</b>의 '우리 팀 비밀 주소'가 펌웨어의 <code>TOPIC_PREFIX</code>와 똑같은지 확인하세요. 장치 없이 화면만 보고 싶으면 설정에서 <b>데모 모드</b>를 켜세요.</div>
+  <div id="grid" class="grid"></div>
+  <section class="log">
+    <h3>경보·이벤트 기록 <button id="btnClearLog" class="btn small">기록 지우기</button></h3>
+    <ul id="log"></ul>
+  </section>
+</main>
+<footer>MQTT 실시간 모니터 · 실시간 모드는 2초마다, 절전 모드는 정해진 분마다 보고 · 이 화면을 닫아도 스마트폰 푸시는 ntfy 앱으로 받습니다.</footer>
+
+<!-- 설정 -->
+<dialog id="dlgSettings">
+  <div class="hd"><b>설정</b><button class="btn small" data-close>닫기</button></div>
+  <div class="bd">
+    <label>중계 서버 주소 (보통 바꾸지 않음)<input id="setBroker" type="text"></label>
+    <label>우리 팀 비밀 주소 (펌웨어의 TOPIC_PREFIX와 똑같이)<input id="setPrefix" type="text"></label>
+    <label>이 시간(초) 동안 소식이 없으면 '연결 끊김'<input id="setStale" type="number" min="5" max="600"></label>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input id="setDemo" type="checkbox"> 데모 모드 (장치 없이 가상 데이터로 시험)</label>
+    <div class="step">팁: 주소 뒤에 <code>?prefix=접두어</code>를 붙여 북마크하면 다른 휴대폰에서도 같은 설정으로 열립니다.</div>
+    <div class="row"><button id="btnSave" class="btn primary">저장 후 다시 연결</button></div>
+  </div>
+</dialog>
+
+<!-- 보정 / 장치 관리 -->
+<dialog id="dlgCal">
+  <div class="hd"><b id="calTitle">보정</b><button class="btn small" data-close>닫기</button></div>
+  <div class="bd">
+    <div class="live" id="calLive">-- MPa <small>가변저항 숫자 --</small></div>
+    <div class="step"><b>보정 = 눈금 맞추기</b>입니다. ① 발펌프로 공기를 넣고 바늘이 멈출 때까지 5초 기다립니다 → ② 소화기 압력계 눈금에서 읽은 숫자를 아래 칸에 적습니다 → ③ <b>보정점 추가</b>를 누릅니다. 0부터 시작해 4~5번 반복하세요. USB 선을 뽑고 <b>배터리로 켠 상태</b>에서 해야 합니다.</div>
+    <div class="row">
+      <label>압력계 눈금에서 읽은 값 (MPa)<input id="calMpa" type="number" step="0.01" min="0" max="3" placeholder="예: 0.70"></label>
+      <button class="btn primary" data-cmd="caladd">보정점 추가</button>
+    </div>
+    <div class="row">
+      <button class="btn" data-cmd="cal list">보정점 목록</button>
+      <button class="btn" data-cmd="calclear">보정점 전체 삭제</button>
+      <button class="btn" data-cmd="status">상태 조회</button>
+    </div>
+    <div class="row">
+      <label>정상 범위 시작 (MPa)<input id="thLow" type="number" step="0.01"></label>
+      <label>정상 범위 끝 (MPa)<input id="thHigh" type="number" step="0.01"></label>
+      <button class="btn" data-cmd="th">정상 범위 저장</button>
+    </div>
+    <div class="row">
+      <button class="btn" data-cmd="test">시험 알림 보내기</button>
+    </div>
+    <pre class="resp" id="calResp">장치 응답이 여기에 표시됩니다.</pre>
+  </div>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+// ---------------------------------------------------------------- 설정
+const DEFAULTS = { broker: 'wss://broker.hivemq.com:8884/mqtt', prefix: 'kfire/CHANGE-ME-7f3k9q', stale: 15, demo: false };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('extmon.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('extmon.' + k, JSON.stringify(v)); } catch (e) {} }
+};
+const qs = new URLSearchParams(location.search);
+const cfg = Object.assign({}, DEFAULTS, store.get('cfg', {}));
+if (qs.get('prefix')) cfg.prefix = qs.get('prefix');
+if (qs.get('broker')) cfg.broker = qs.get('broker');
+if (qs.get('demo')) cfg.demo = qs.get('demo') === '1';
+
+const STATUS_KO = { NORMAL: '정상', LOW: '압력 부족', HIGH: '과압', FAULT: '센서 이상', UNCAL: '보정 필요', INIT: '초기화', OFFLINE: '통신 두절' };
+const TYPE_KO = { LOW: '압력 부족', HIGH: '과압', FAULT: '센서 이상', NORMAL: '정상', RAPID_DROP: '급격한 압력 저하', MISMATCH: '센서 불일치',
+  REMIND: '경보 지속', TEST: '테스트', ACK: '경보 확인', UNCAL: '보정 필요', OFFLINE: '통신 두절', ONLINE: '연결 복구' };
+
+// ---------------------------------------------------------------- 상태
+const devices = {};          // id -> {id,name,s(state),lastSeen,online,hist:[{t,p}],el}
+let client = null;
+let audioCtx = null, sirenTimer = null, silencedKey = '', alertsOn = false;
+let logItems = store.get('log', []);
+let calDeviceId = null;
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? '--' : Number(v).toFixed(d);
+const ago = t => { if (!t) return '-'; const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + '초 전' : Math.round(s / 60) + '분 전'; };
+
+// ---------------------------------------------------------------- MQTT
+function loadMqttLib() {
+  return new Promise((res, rej) => {
+    if (window.mqtt) return res();
+    const srcs = ['https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js', 'https://unpkg.com/mqtt@5/dist/mqtt.min.js'];
+    const tryNext = i => {
+      if (i >= srcs.length) return rej(new Error('mqtt.js 로드 실패'));
+      const s = document.createElement('script'); s.src = srcs[i];
+      s.onload = () => res(); s.onerror = () => tryNext(i + 1);
+      document.head.appendChild(s);
+    };
+    tryNext(0);
+  });
+}
+
+function setConn(cls, text) { const c = $('#conn'); c.className = 'pill ' + cls; c.textContent = text; }
+
+async function connect() {
+  if (client) { try { client.end(true); } catch (e) {} client = null; }
+  stopDemo();
+  if (cfg.demo) { setConn('wait', '데모 모드'); startDemo(); return; }
+  setConn('wait', '연결 중');
+  try { await loadMqttLib(); } catch (e) { setConn('off', '라이브러리 로드 실패'); return; }
+  const id = 'extmon-web-' + Math.random().toString(16).slice(2, 10);
+  client = window.mqtt.connect(cfg.broker, { clientId: id, clean: true, reconnectPeriod: 3000, connectTimeout: 10000, keepalive: 30 });
+  client.on('connect', () => {
+    setConn('on', '실시간 연결됨');
+    const p = cfg.prefix;
+    client.subscribe([p + '/ext/+/state', p + '/ext/+/alert', p + '/ext/+/online', p + '/ext/+/resp'], { qos: 1 });
+  });
+  client.on('reconnect', () => setConn('wait', '재연결 중'));
+  client.on('offline', () => setConn('off', '서버 연결 끊김'));
+  client.on('error', err => setConn('off', '오류: ' + (err && err.message ? err.message : err)));
+  client.on('message', (topic, payload) => handleMessage(topic, payload.toString()));
+}
+
+function sendCmd(devId, cmd) {
+  if (cfg.demo) { demoCmd(devId, cmd); return; }
+  if (!client || !client.connected) { alert('브로커에 연결되어 있지 않습니다.'); return; }
+  client.publish(cfg.prefix + '/ext/' + devId + '/cmd', cmd, { qos: 1 });
+  const d = devices[devId];
+  if (d && d.online === 'sleep') {
+    const msg = '장치가 절전 중입니다. 다음에 깨어날 때 명령이 전달됩니다.';
+    if (calDeviceId === devId) $('#calResp').textContent = msg; else addLog(devId, 'TEST', msg + ' (' + cmd + ')');
+  }
+}
+
+// ---------------------------------------------------------------- 메시지 처리
+function handleMessage(topic, text) {
+  const parts = topic.split('/');
+  const kind = parts[parts.length - 1], id = parts[parts.length - 2];
+  const d = devices[id] || (devices[id] = { id, name: id, s: null, lastSeen: 0, online: null, hist: [], staleLogged: false });
+  if (kind === 'state') {
+    let s; try { s = JSON.parse(text); } catch (e) { return; }
+    d.s = s; d.name = s.name || id; d.lastSeen = Date.now();
+    if (d.staleLogged) { d.staleLogged = false; addLog(id, 'ONLINE', '데이터 수신 재개'); }
+    if (typeof s.p === 'number') { d.hist.push({ t: Date.now(), p: s.p }); if (d.hist.length > 400) d.hist.shift(); }
+    if (calDeviceId === id) updateCalLive();
+  } else if (kind === 'online') {
+    const t = text.trim();
+    const v = t === 'sleep' ? 'sleep' : t === '1';      // '1' 켜짐, '0' 끊김, 'sleep' 절전 중
+    if (d.online !== null && d.online !== undefined && v !== d.online) {
+      if (v === false) addLog(id, 'OFFLINE', '장치 연결 끊김 (전원/Wi-Fi 확인)');
+      else if (d.online === false) addLog(id, 'ONLINE', '장치 연결');
+    }
+    d.online = v;
+  } else if (kind === 'alert') {
+    let a; try { a = JSON.parse(text); } catch (e) { return; }
+    addLog(id, a.type, a.msg);
+    if (['LOW', 'HIGH', 'FAULT', 'RAPID_DROP', 'MISMATCH', 'REMIND', 'TEST'].includes(a.type)) {
+      notify('[' + id + '] ' + (TYPE_KO[a.type] || a.type), a.msg);
+      if (a.type === 'RAPID_DROP' || a.type === 'TEST') beep(3);
+    }
+  } else if (kind === 'resp') {
+    if (calDeviceId === id) $('#calResp').textContent = text;
+  }
+  $('#hint').style.display = Object.keys(devices).length ? 'none' : '';
+  render(id);
+  updateAlarm();
+}
+
+function staleLimitMs(d) {
+  // 절전 모드 장치는 '다음 보고 시각 + 90초'가 지나야 통신 두절로 판단
+  const next = d.s && d.s.mode === 'sleep' ? (d.s.next || 0) + 90 : 0;
+  return Math.max(cfg.stale, next) * 1000;
+}
+function effectiveStatus(d) {
+  if (d.online === false) return 'OFFLINE';
+  if (!d.s || Date.now() - d.lastSeen > staleLimitMs(d)) return 'OFFLINE';
+  return d.s.st;
+}
+function modeText(d) {
+  const s = d.s || {};
+  if (s.mode !== 'sleep') return '실시간';
+  const left = Math.max(0, Math.round((d.lastSeen + (s.next || 0) * 1000 - Date.now()) / 60000));
+  return d.online === 'sleep' ? `절전 · 약 ${left}분 뒤 보고` : '절전 · 지금 깨어 있음';
+}
+
+// ---------------------------------------------------------------- 그리기
+function gaugeSVG(s) {
+  const max = (s && s.max) || 1.4, low = s ? s.low : 0.7, high = s ? s.high : 0.98;
+  const p = s && typeof s.p === 'number' ? s.p : null;
+  const cx = 110, cy = 105, r = 82, a0 = -120, a1 = 120;
+  const ang = v => a0 + (Math.max(0, Math.min(max, v)) / max) * (a1 - a0);
+  const pt = (a, rr) => { const t = (a - 90) * Math.PI / 180; return [cx + rr * Math.cos(t), cy + rr * Math.sin(t)]; };
+  const arc = (v0, v1, color) => {
+    const A = ang(v0), B = ang(v1); if (B <= A) return '';
+    const [x0, y0] = pt(A, r), [x1, y1] = pt(B, r);
+    return `<path d="M${x0} ${y0} A${r} ${r} 0 ${B - A > 180 ? 1 : 0} 1 ${x1} ${y1}" stroke="${color}" stroke-width="14" fill="none"/>`;
+  };
+  let ticks = '';
+  for (let i = 0; i <= 7; i++) {
+    const v = max * i / 7, a = ang(v), [x0, y0] = pt(a, r - 12), [x1, y1] = pt(a, r - 20), [tx, ty] = pt(a, r - 32);
+    ticks += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#8fa0b3" stroke-width="1.5"/><text x="${tx}" y="${ty + 4}" fill="#8fa0b3" font-size="10" text-anchor="middle">${v.toFixed(1)}</text>`;
+  }
+  let needle = '';
+  if (p !== null) { const [nx, ny] = pt(ang(p), r - 8); needle = `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="#fff" stroke-width="3" stroke-linecap="round"/>`; }
+  return `<svg viewBox="0 0 220 165" width="230" height="172" role="img" aria-label="압력 게이지">
+    ${arc(0, low, '#ef4b4b')}${arc(low, high, '#2fbf71')}${arc(high, max, '#ef4b4b')}${ticks}${needle}
+    <circle cx="${cx}" cy="${cy}" r="6" fill="#fff"/>
+    <text x="${cx}" y="${cy + 38}" fill="#e8eef5" font-size="24" font-weight="700" text-anchor="middle">${p === null ? '--' : p.toFixed(2)}</text>
+    <text x="${cx}" y="${cy + 54}" fill="#8fa0b3" font-size="11" text-anchor="middle">MPa</text></svg>`;
+}
+
+function drawTrend(canvas, d) {
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w) return;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+  const s = d.s || {}, max = s.max || 1.4, now = Date.now(), span = 10 * 60 * 1000;
+  const X = t => (1 - (now - t) / span) * w, Y = v => h - 6 - (Math.max(0, Math.min(max, v)) / max) * (h - 12);
+  g.fillStyle = 'rgba(47,191,113,.10)'; if (s.low !== undefined) g.fillRect(0, Y(s.high), w, Y(s.low) - Y(s.high));
+  const pts = d.hist.filter(x => now - x.t < span);
+  g.strokeStyle = '#4aa3ff'; g.lineWidth = 2; g.beginPath();
+  pts.forEach((x, i) => i ? g.lineTo(X(x.t), Y(x.p)) : g.moveTo(X(x.t), Y(x.p))); g.stroke();
+  g.fillStyle = '#8fa0b3'; g.font = '10px sans-serif'; g.fillText('최근 10분', 6, 12);
+}
+
+function render(id) {
+  const d = devices[id]; if (!d) return;
+  if (!d.el) {
+    d.el = document.createElement('div'); d.el.className = 'card';
+    d.el.innerHTML = `<h2></h2><div class="sub"></div><span class="badge"></span><div class="gaugewrap"></div>
+      <div class="meta"></div><canvas class="trend"></canvas>
+      <div class="actions"><button class="btn small" data-a="cal">보정·관리</button><button class="btn small" data-a="test">시험 알림</button><button class="btn small" data-a="ack">경보 확인</button></div>`;
+    d.el.addEventListener('click', e => {
+      const a = e.target.dataset && e.target.dataset.a; if (!a) return;
+      if (a === 'cal') openCal(id);
+      if (a === 'test') sendCmd(id, 'test');
+      if (a === 'ack') { sendCmd(id, 'ack'); silenceNow(); }
+    });
+    d.el.dataset.id = id;
+    const grid = $('#grid'); grid.appendChild(d.el);
+    [...grid.children].sort((a, b) => a.dataset.id > b.dataset.id ? 1 : -1).forEach(n => grid.appendChild(n));
+  }
+  const s = d.s || {}, st = effectiveStatus(d);
+  d.el.className = 'card st-' + st + (st === 'OFFLINE' ? ' offline' : '');
+  d.el.querySelector('h2').textContent = d.name;
+  d.el.querySelector('.sub').textContent = id + ' · 정상 ' + fmt(s.low) + '~' + fmt(s.high) + ' MPa';
+  const b = d.el.querySelector('.badge'); b.className = 'badge b-' + st; b.textContent = STATUS_KO[st] || st;
+  d.el.querySelector('.gaugewrap').innerHTML = gaugeSVG(d.s);
+  d.el.querySelector('.meta').innerHTML =
+    `<span>마지막 수신 <b>${ago(d.lastSeen)}</b></span><span>Wi-Fi <b>${s.rssi !== undefined ? s.rssi + ' dBm' : '-'}</b></span>
+     <span>가변저항 숫자 <b>${fmt(s.raw, 1)}</b></span><span>보정점 <b>${s.cal ?? '-'}개</b></span>
+     <span>경보 확인 <b>${s.ack ? '완료' : '-'}</b></span><span>작동 <b>${esc(modeText(d))}</b></span>`;
+  drawTrend(d.el.querySelector('canvas'), d);
+}
+
+// ---------------------------------------------------------------- 경보 (배너/소리/알림)
+function updateAlarm() {
+  const bad = [], warn = [];
+  for (const d of Object.values(devices)) {
+    const st = effectiveStatus(d);
+    if (st === 'LOW' || st === 'HIGH') bad.push(`${d.name}: ${STATUS_KO[st]} ${fmt(d.s && d.s.p)} MPa`);
+    else if (st === 'FAULT' || st === 'OFFLINE') warn.push(`${d.name}: ${STATUS_KO[st]}`);
+    if (st === 'OFFLINE' && !d.staleLogged && d.lastSeen) { d.staleLogged = true; addLog(d.id, 'OFFLINE', Math.round(staleLimitMs(d) / 1000) + '초 이상 데이터 없음'); notify('[' + d.id + '] 통신 두절', '장치 전원/Wi-Fi를 확인하세요.'); }
+  }
+  const box = $('#alarm');
+  const key = bad.concat(warn).join('|');
+  if (!key) { box.className = ''; stopSiren(); silencedKey = ''; document.title = '소화기 압력 실시간 모니터'; return; }
+  box.className = 'show' + (bad.length ? '' : ' warnonly');
+  $('#alarmTitle').textContent = bad.length ? '압력 이상 경보' : '확인 필요';
+  $('#alarmText').innerHTML = bad.concat(warn).map(esc).join('<br>');
+  document.title = (bad.length ? '🚨 ' : '⚠ ') + '경보 - 소화기 모니터';
+  if (bad.length && key !== silencedKey) startSiren(); else stopSiren();
+}
+
+function silenceNow() {
+  const parts = [];
+  for (const d of Object.values(devices)) { const st = effectiveStatus(d); if (st === 'LOW' || st === 'HIGH') parts.push(`${d.name}: ${STATUS_KO[st]} ${fmt(d.s && d.s.p)} MPa`); else if (st === 'FAULT' || st === 'OFFLINE') parts.push(`${d.name}: ${STATUS_KO[st]}`); }
+  silencedKey = parts.join('|'); stopSiren();
+}
+
+function ensureAudio() { if (!audioCtx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); } if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }
+function tone(freq, dur) {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.08;
+  o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function beep(n) { for (let i = 0; i < n; i++) setTimeout(() => tone(1000, 0.15), i * 250); }
+function startSiren() {
+  if (sirenTimer) return;
+  let hi = false;
+  sirenTimer = setInterval(() => { hi = !hi; tone(hi ? 880 : 660, 0.35); vibrate(300); }, 400);
+}
+function stopSiren() { if (sirenTimer) { clearInterval(sirenTimer); sirenTimer = null; } }
+
+function notify(title, body) {
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body, tag: title, renotify: true }); } catch (e) {}
+  vibrate([200, 100, 200]);
+}
+function vibrate(p) { if (alertsOn && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} } }
+
+let wakeLock = null;
+async function enableAlerts() {
+  alertsOn = true; ensureAudio(); beep(1);
+  try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  $('#btnEnable').textContent = '소리 켜짐'; $('#btnEnable').classList.remove('primary');
+}
+
+// ---------------------------------------------------------------- 기록
+function addLog(id, type, msg) {
+  logItems.unshift({ t: Date.now(), id, type, msg });
+  logItems = logItems.slice(0, 200); store.set('log', logItems); renderLog();
+}
+function renderLog() {
+  $('#log').innerHTML = logItems.map(x => `<li><time>${new Date(x.t).toLocaleString('ko-KR', { hour12: false })}</time>
+    <span class="t t-${esc(x.type)}">${esc(x.id)} ${esc(TYPE_KO[x.type] || x.type)}</span><span>${esc(x.msg)}</span></li>`).join('') || '<li>기록 없음</li>';
+}
+
+// ---------------------------------------------------------------- 보정 대화상자
+function openCal(id) {
+  calDeviceId = id; const d = devices[id];
+  $('#calTitle').textContent = '보정·관리 - ' + (d ? d.name : id);
+  $('#calResp').textContent = '장치 응답이 여기에 표시됩니다.';
+  if (d && d.s) { $('#thLow').value = d.s.low; $('#thHigh').value = d.s.high; }
+  updateCalLive(); $('#dlgCal').showModal();
+}
+function updateCalLive() {
+  const d = devices[calDeviceId]; if (!d || !d.s) return;
+  $('#calLive').innerHTML = `${fmt(d.s.p)} MPa <small>가변저항 숫자 ${fmt(d.s.raw, 1)} · ${esc(STATUS_KO[d.s.st] || d.s.st)}</small>`;
+}
+$('#dlgCal').addEventListener('click', e => {
+  const c = e.target.dataset && e.target.dataset.cmd; if (!c || !calDeviceId) return;
+  if (c === 'caladd') { const v = parseFloat($('#calMpa').value); if (Number.isNaN(v)) return alert('기준 압력(MPa)을 입력하세요.'); sendCmd(calDeviceId, 'cal add ' + v.toFixed(3)); }
+  else if (c === 'calclear') { if (confirm('보정점을 모두 지울까요?')) sendCmd(calDeviceId, 'cal clear'); }
+  else if (c === 'th') { const a = parseFloat($('#thLow').value), b = parseFloat($('#thHigh').value); if (!(a < b)) return alert('하한 < 상한 이어야 합니다.'); sendCmd(calDeviceId, `th ${a} ${b}`); }
+  else sendCmd(calDeviceId, c);
+  $('#calResp').textContent = '명령 전송: ' + c + ' ...';
+});
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { b.closest('dialog').close(); }));
+$('#dlgCal').addEventListener('close', () => { calDeviceId = null; });
+
+// ---------------------------------------------------------------- 설정 대화상자
+$('#btnSettings').addEventListener('click', () => {
+  $('#setBroker').value = cfg.broker; $('#setPrefix').value = cfg.prefix; $('#setStale').value = cfg.stale; $('#setDemo').checked = cfg.demo;
+  $('#dlgSettings').showModal();
+});
+$('#btnSave').addEventListener('click', () => {
+  cfg.broker = $('#setBroker').value.trim() || DEFAULTS.broker;
+  cfg.prefix = $('#setPrefix').value.trim().replace(/\/+$/, '') || DEFAULTS.prefix;
+  cfg.stale = Math.max(5, parseInt($('#setStale').value, 10) || 15);
+  cfg.demo = $('#setDemo').checked;
+  store.set('cfg', cfg);
+  for (const k of Object.keys(devices)) { if (devices[k].el) devices[k].el.remove(); delete devices[k]; }
+  $('#hint').style.display = '';
+  $('#dlgSettings').close(); connect(); updateAlarm();
+});
+$('#btnEnable').addEventListener('click', enableAlerts);
+$('#btnAck').addEventListener('click', () => {
+  ensureAudio();
+  for (const d of Object.values(devices)) { const st = effectiveStatus(d); if (['LOW', 'HIGH', 'FAULT'].includes(st)) sendCmd(d.id, 'ack'); }
+  silenceNow();
+});
+$('#btnClearLog').addEventListener('click', () => { if (confirm('기록을 지울까요?')) { logItems = []; store.set('log', logItems); renderLog(); } });
+
+// ---------------------------------------------------------------- 데모 모드 (장치 없이 시험)
+let demoTimer = null, demoT = 0;
+const demo = {
+  'EXT-01': { name: '이공관 211-1 소화기 1번 (데모)', p: 0.86, raw: 600, cal: 4, st: 'NORMAL', leak: true, ack: 0 },
+  'EXT-02': { name: '이공관 211-1 소화기 2번 (데모)', p: 0.84, raw: 590, cal: 4, st: 'NORMAL', leak: false, ack: 0 }
+};
+function startDemo() {
+  demoT = 0;
+  for (const [id, x] of Object.entries(demo)) { x.p = id === 'EXT-01' ? 0.86 : 0.84; x.st = 'NORMAL'; x.ack = 0; handleMessage(`demo/ext/${id}/online`, '1'); }
+  demoTimer = setInterval(() => {
+    demoT += 2;
+    for (const [id, x] of Object.entries(demo)) {
+      const prev = x.st;
+      if (x.leak && demoT > 10) x.p = Math.max(0, x.p - 0.012);       // 1번: 10초 후부터 서서히 누설
+      x.p += (Math.random() - 0.5) * 0.004;
+      if (x.leak && demoT > 90) { x.p = 0.88; demoT = 0; }           // 90초마다 다시 충전
+      x.raw = 300 + x.p * 350;
+      x.st = x.p < 0.70 ? 'LOW' : x.p > 0.98 ? 'HIGH' : 'NORMAL';
+      if (x.st !== prev) { x.ack = 0; handleMessage(`demo/ext/${id}/alert`, JSON.stringify({ id, type: x.st, p: x.p, msg: (x.st === 'NORMAL' ? '정상 복귀: ' : STATUS_KO[x.st] + ' 경보: ') + x.p.toFixed(2) + ' MPa (정상 0.70~0.98 MPa)' })); }
+      handleMessage(`demo/ext/${id}/state`, JSON.stringify({ id, name: x.name, p: x.p, raw: x.raw, st: x.st, low: 0.70, high: 0.98, max: 1.4, cal: x.cal, ack: x.ack, rssi: -55 - Math.round(Math.random() * 8), up: demoT , fw: 'demo' }));
+    }
+  }, 2000);
+}
+function stopDemo() { if (demoTimer) { clearInterval(demoTimer); demoTimer = null; } }
+function demoCmd(id, cmd) {
+  const x = demo[id]; if (!x) return;
+  let r = '데모 응답: ' + cmd;
+  if (cmd === 'ack') { x.ack = 1; r = '경보 확인 처리'; handleMessage(`demo/ext/${id}/alert`, JSON.stringify({ id, type: 'ACK', msg: '경보 확인됨 - 재알림 중지' })); }
+  if (cmd === 'test') { r = '테스트 경보 발송'; handleMessage(`demo/ext/${id}/alert`, JSON.stringify({ id, type: 'TEST', msg: '테스트 경보입니다. 현재 ' + x.p.toFixed(2) + ' MPa' })); }
+  if (cmd.startsWith('cal add')) r = `보정점 추가: ${cmd.slice(8)} MPa = 숫자 ${x.raw.toFixed(1)}`;
+  setTimeout(() => handleMessage(`demo/ext/${id}/resp`, r), 300);
+}
+
+// ---------------------------------------------------------------- 시작
+renderLog();
+connect();
+setInterval(() => { for (const id of Object.keys(devices)) render(id); updateAlarm(); }, 1000);  // 경과시간/두절 감시
+window.addEventListener('resize', () => { for (const id of Object.keys(devices)) render(id); });
+document.addEventListener('visibilitychange', async () => { if (wakeLock !== null && document.visibilityState === 'visible') { try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} } });
+})();
+</script>
+</body>
+</html>
